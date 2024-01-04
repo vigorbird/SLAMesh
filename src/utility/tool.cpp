@@ -479,6 +479,8 @@ float computeMSE(const PointMatrix & points_source, const PointMatrix & points_t
     //pcl::console::print_highlight ("RMSE Error: %f\n", rmse);
     return rmse;
 }
+
+
 bool extendEigen1dVector(Eigen::Matrix<double, 1, Eigen::Dynamic> & ori_vector, int extend_length){
 
     ori_vector.conservativeResize(Eigen::NoChange_t(1), ori_vector.cols() + extend_length);

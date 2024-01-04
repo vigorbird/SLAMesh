@@ -48,7 +48,7 @@ bool readKitti(const std::string & file_dataset, const std::string& seq, int lin
                pcl::PointCloud<pcl::PointXYZ> & laser_cloud);
 
 //transformation
-Point trans3Dpoint(int x, int y, int z, const Transf& transf);
+Point trans3Dpoint(int x, int y, int z, const Transf& transf);//T*p = p'
 Eigen::MatrixXd trans3Dpoints(const Eigen::MatrixXd &bef_rotate, Eigen::Isometry3d &T);
 Transf createTrans(double x, double y, double z, double roll, double pitch, double yaw);
 

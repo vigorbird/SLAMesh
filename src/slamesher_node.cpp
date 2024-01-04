@@ -153,6 +153,7 @@ void Log::initLog(std::string & log_file_path){
         }
     }
 }
+
 void Log::saveResult(double code_whole_time, const PointMatrix & map_glb_point_filtered){
     //save report
     ROS_DEBUG("saveResult");
@@ -379,8 +380,10 @@ void Log::updatePose(Transf & now_slam_transf){
 
     //store Tsep
     T_seq.push_back(now_slam_transf);
+
+    //计算走过的路程
     Point tmp_pose;
-    tmp_pose = trans3Dpoint(0, 0, 0, now_slam_transf);
+    tmp_pose = trans3Dpoint(0, 0, 0, now_slam_transf);//T*p = p'
     pose.col(step) = tmp_pose;
     if(step > 0){
         trajectory_length += sqrt(pow(tmp_pose(0, 0) - pose(0, step - 1), 2) +
@@ -388,12 +391,14 @@ void Log::updatePose(Transf & now_slam_transf){
                 pow(tmp_pose(2, 0) - pose(2, step - 1), 2));
     }
 
+    //只是为了将轨迹通过ros发布出去
     recordPoseToPath(Slam, now_slam_transf);
     //save path and grt_path to txt
     //savePathEveryStep2Txt(file_loc_path_gdt_wrt, path_grt);
     //savePathEveryStep2Txt(file_loc_path_wrt, path);
 
     //update imu translation and imu bias
+    //不用看这个函数 默认不使用imu
     if(!param.read_offline_pcd && param.imu_feedback){
 
         now_imu_transf << imu_rot, imu_pos, 0, 0, 0, 1;
@@ -532,6 +537,7 @@ void Parameter::initParameter(ros::NodeHandle & nh){
     std::cout<<"====ROS INIT DONE===="<<std::endl;
 }
 
+//默认使用匀速模型计算初始的位姿态
 Transf SLAMesher::getOdom(){
     //before scan registration, obtain initial guess of transformation from motion prior or odometry msg
     Transf odom, dT, odom_now, odom_pre;
@@ -555,6 +561,7 @@ Transf SLAMesher::getOdom(){
         g_data.transf_odom_last = g_data.transf_odom_now;//once the odom_offline was read, the odom_buff_last will be updated
     }
     else{
+        //使用匀速模型计算初始的位姿态
         if(g_data.step == 1){
             odom = g_data.T_seq[g_data.step - 1];
         }
@@ -832,17 +839,19 @@ void SLAMesher::process(){
         TicToc t_step;
         g_data.t_gp = g_data.t_compute_rt = 0;
         //new scan
-        Tguess = getOdom();
-        if(!map_now.processNewScan(Tguess, g_data.step, map_glb)){
+        Tguess = getOdom();//默认使用匀速模型计算初始的位姿态
+
+        if(!map_now.processNewScan(Tguess, g_data.step, map_glb))//非常重要的函数！！！！！！！
+        {
             std::cout<<"break"<<std::endl;
             break;
         }
         //register
-        map_now.registerToMap(map_glb, Tguess, max_rg_time);
-        pubTf();
+        map_now.registerToMap(map_glb, Tguess, max_rg_time);//非常重要的函数！！！！！！！
+        pubTf();//ros 发布消息
         //map update
         TicToc t_update;
-        map_glb.updateMap(map_now);
+        map_glb.updateMap(map_now);//非常重要的函数！！！！！！！！
         g_data.time_update(0, g_data.step) = t_update.toc();
         //draw map
         TicToc t_draw_map;
@@ -879,6 +888,8 @@ void SLAMesher::process(){
 }
 
 SLAMesher::SLAMesher(ros::NodeHandle & nh_, Parameter & param_, Log & g_data_) : nh (nh_), param(param_), g_data(g_data_){
+
+    //1.订阅topic
     odom_pub          = nh.advertise<nav_msgs::Odometry>("/lidar_odometry", 1);
 
     map_vertices_glb_pub         = nh.advertise<sensor_msgs::PointCloud>("/map_vertices_glb", 1);
@@ -927,7 +938,7 @@ int main(int argc, char **argv){
     ros::console::set_logger_level(ROSCONSOLE_DEFAULT_NAME, ros::console::levels::Info);//Debug Info
     ros::Rate r(1);
 
-    SLAMesher slamesher(nh, param, g_data);
+    SLAMesher slamesher(nh, param, g_data);//订阅topic 设置一些全局的 变量
     r.sleep();//waiting for the topic registration
     slamesher.process();//very important function!!!!!
 

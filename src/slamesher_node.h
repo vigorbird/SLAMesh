@@ -88,6 +88,8 @@ public:
     void extendLog();
     Transf initFirstTransf();
     void updatePose(Transf & now_slam_transf);
+
+    //只是为了将轨迹通过ros发布出去
     inline void recordPoseToPath(enum WhosPath whos_path, const Transf & transf){
         //save transformation to path msg
         //pose
@@ -123,7 +125,8 @@ public:
             }
             default: ROS_INFO("wrong usage of recordPoseToPath");
         }
-    }
+    }//end function recordPoseToPath
+
     void savePath2TxtKitti(std::ofstream & file_out, nav_msgs::Path & path_msg);
     void savePathTxt(std::ofstream & file_out, nav_msgs::Path & path_msg);
     void saveResult(double code_whole_time, const PointMatrix & map_glb_point_filtered);

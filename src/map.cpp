@@ -4,6 +4,8 @@
 extern Parameter param;//in SLAMesh node
 extern Log g_data;//in SLAMesh node
 
+//get_laser_time = 激光时间戳
+//points_result = 根据原始激光点云 voxle filter和 range filter之后的点云
 bool getPointCloud(PointMatrix & points_result, pcl::PointCloud<pcl::PointXYZ> & pcl_got, double & get_laser_time,
                    double voxel_filter_size){
     // get the new point cloud, from pcd file or from ros message
@@ -23,6 +25,7 @@ bool getPointCloud(PointMatrix & points_result, pcl::PointCloud<pcl::PointXYZ> &
     }
     else{
         ros::spinOnce();
+        //从ros回调中拿数据
         while(ros::ok() && g_data.pcl_msg_buff_deque.empty()){
             //ROS_INFO("NO pcl scan, Wait 2 second...");
             usleep(100);
@@ -48,13 +51,17 @@ bool getPointCloud(PointMatrix & points_result, pcl::PointCloud<pcl::PointXYZ> &
     //voxel_filter_size filter
     TicToc t_down_sample;
     if(voxel_filter_size > 0){
+        //pcl_raw_ptr = 从ros回调中获取的激光原始点云
         *pcl_filtered_ptr = pclVoxelFilter(pcl_raw_ptr, voxel_filter_size);
     }
     else{
         pcl_filtered_ptr = pcl_raw_ptr;
     }
+
     //pcl::transformPointCloud(*pcl_filtered_ptr, *pcl_filtered_ptr, g_data.lidar_install_transf.cast<float>());
+    //将pcl的数据结构变换为eigen的数据结构
     points_raw = pcl_filtered_ptr->getMatrixXfMap().cast<double>();
+
     //range filter
     int filter_point_step = 1;//simple down-sample
     double range_max_square = range_max * range_max,
@@ -309,12 +316,15 @@ bool  Map::processNewScan(Transf & Tguess, int step_, const Map & map_glb){
     }
     name = "CURRENT_SCAN";
     TicToc t_get_pcl, t_turn_point, t_gp;
+    //1.
     if(!getPointCloud(points_turned, pcl_raw, timestamp, param.voxel_size)){
         return false;
     }
     g_data.time_get_pcl(0, g_data.step) = t_get_pcl.toc();
     std::cout<<"t_get_pcl:"<<t_get_pcl.toc() << "ms"<< std::endl;
+    //2.
     points_turned.transformPoints(Tguess);
+    //3.
     dividePointsIntoCell(points_turned, map_glb, true);
     return true;
 }
