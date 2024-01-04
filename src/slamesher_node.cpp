@@ -859,13 +859,14 @@ void SLAMesher::process(){
         std::cout<<"t_update        : "<<g_data.time_update(0, g_data.step) << "ms"<< std::endl;
         std::cout<<"t_draw_map      : "<<g_data.time_cost_draw_map(0, g_data.step) << "ms"<< std::endl;
         std::cout<<"===STEP "<<g_data.step<<"===Time used: "<< g_data.time_cost(0, g_data.step) <<" ms==="<< std::endl;
-    }
+    }//end while while(nh.ok()){
+
     //some final process, such as report
     if(g_data.step == param.max_steps){
         std::cout<<"Reach Max Step, exit"<<std::endl;
     }
     bool save_mesh_map = false;
-    map_glb.filterMeshGlb();
+    map_glb.filterMeshGlb();//好像只是为了做数据格转换
     mesh_pub.publish(map_glb.mesh_msg);
     if(save_mesh_map){
         //at the end, publish global mesh map, may cost seconds
@@ -876,6 +877,7 @@ void SLAMesher::process(){
     g_data.file_loc_path_wrt.close();
     g_data.file_loc_path_grt_wrt.close();
 }
+
 SLAMesher::SLAMesher(ros::NodeHandle & nh_, Parameter & param_, Log & g_data_) : nh (nh_), param(param_), g_data(g_data_){
     odom_pub          = nh.advertise<nav_msgs::Odometry>("/lidar_odometry", 1);
 
@@ -927,7 +929,8 @@ int main(int argc, char **argv){
 
     SLAMesher slamesher(nh, param, g_data);
     r.sleep();//waiting for the topic registration
-    slamesher.process();
+    slamesher.process();//very important function!!!!!
+
 
     return 0;
 }
