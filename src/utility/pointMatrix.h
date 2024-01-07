@@ -28,7 +28,7 @@ public:
     Eigen::Vector3d min_vector{0,0,0};//or normal vector
     double min_value = -1;
     double variance_sum = -1;
-    std::map<double, Eigen::Matrix<double, 3, 1>> eig_sorted;
+    std::map<double, Eigen::Matrix<double, 3, 1>> eig_sorted;//key = 特征值 value = 特征向量
 
     PointMatrix(){
         //initialize
@@ -227,6 +227,7 @@ public:
         tmp_point_expend = trans * tmp_point_expend;
         point.leftCols(num_point) = tmp_point_expend.topRows(3);
     }
+
     void eigenDecomposition(){
         //Eigen decomposition
         if(num_point != 0){

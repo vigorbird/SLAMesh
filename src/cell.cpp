@@ -65,12 +65,13 @@ void VoxelFilter2D(int num_input, int & num_output, double grid,
     num_output = col;
 }
 
+//最为核心的函数！！！！！！！！！！
 void Cell::gaussianProcess(enum Direction gp_direction){
     //standard gaussianProcess
     bool full_cover = param.full_cover; //whether the first and final test points lie on the border or not.
     //full_cover: test point location start from 0.5*step, like 0.5, 1.5, ..., 9.5
     //if full_cover == false: test point location start from 0*step, like 0, 1, ..., 10
-    int num_test_side = param.num_test;
+    int num_test_side = param.num_test;//作者使用的num_test = 6
     double grid = param.grid;
     int num_test_square = param.num_test * param.num_test;
     double interval = grid / num_test_side;
@@ -81,9 +82,10 @@ void Cell::gaussianProcess(enum Direction gp_direction){
     Eigen::Matrix<double, 1, Eigen::Dynamic>  test_x, test_y;
     Eigen::MatrixXd points_testm(num_test_square, 2);
 
-    Direction prediction_dir = Direction((gp_direction + 0) % 3);
-    Direction location_dir_x = Direction((gp_direction + 1) % 3);
-    Direction location_dir_y = Direction((gp_direction + 2) % 3);
+    //如果obseravation = z = 2 
+    Direction prediction_dir = Direction((gp_direction + 0) % 3);//得到的结果为z
+    Direction location_dir_x = Direction((gp_direction + 1) % 3);//得到的结果为x
+    Direction location_dir_y = Direction((gp_direction + 2) % 3);//得到的结果为y
 
     //set test locations
     if(gp_direction == X){
@@ -207,7 +209,9 @@ void Cell::gaussianProcess(enum Direction gp_direction){
         }
     }
     empety = false;
-}
+}//end function gaussianProcess
+
+
 void Cell::reconstructSurfaces(bool glb_cell_not_surface){
     //use gaussian process to reconstruct the local surfaces inside a cell, one cell can have 3 surfaces in 3 directions
     ROS_DEBUG("reconstructSurfaces");
@@ -226,10 +230,12 @@ void Cell::reconstructSurfaces(bool glb_cell_not_surface){
     Eigen::Matrix<double, 1, 3> angle_a, angle_b;
     std::map<double, int> sorted_angle_a, sorted_angle_b;
 
-    cell_raw_points.eigenDecomposition();
-    angle_a = (cell_raw_points.eig_sorted.begin() ->second.transpose() * Eigen::MatrixXd::Identity(3, 3)).array().acos();
-    angle_b = (cell_raw_points.eig_sorted.rbegin()->second.transpose() * Eigen::MatrixXd::Identity(3, 3)).array().acos();
+    cell_raw_points.eigenDecomposition();//对这个cell中的点云做PCA分析 返回的顺序是从最小特征值到最大特征值
+    //特征向量是一个单位向量，作者想要计算最大和最小特征向量分别在坐标系下的roll pitch yaw夹角
+    angle_a = (cell_raw_points.eig_sorted.begin() ->second.transpose() * Eigen::MatrixXd::Identity(3, 3)).array().acos();//最小特征值对应的角度
+    angle_b = (cell_raw_points.eig_sorted.rbegin()->second.transpose() * Eigen::MatrixXd::Identity(3, 3)).array().acos();//最大特征值对应的角度
     //sort
+    //根据roll pitch yaw的夹角根据从小到大进行排序
     for(int i = 0; i < 3; i++){
         angle_a(0, i) = (angle_a(0, i) > M_PI / 2) ? M_PI - angle_a(0, i) : angle_a(0, i);
         angle_b(0, i) = (angle_b(0, i) > M_PI / 2) ? M_PI - angle_b(0, i) : angle_b(0, i);
@@ -237,6 +243,7 @@ void Cell::reconstructSurfaces(bool glb_cell_not_surface){
         sorted_angle_b.emplace(angle_b(0, i), i);
     }
 
+    //最大特征值除以中间那个特征值 大于某个阈值 则认为不是平面，有可能是一条线
     if(cell_raw_points.eig_sorted.rbegin()->first / (++cell_raw_points.eig_sorted.begin())->first > eig_3ratio2_not_surface){//30
         //3/2 > threshold, not surface
         not_surface = true;
@@ -249,28 +256,38 @@ void Cell::reconstructSurfaces(bool glb_cell_not_surface){
     }
     else{
         //can form surface(s)
+        //使用最小特征值的那个角度来判断哪些变量会是observation！
         not_surface = false;
+        //想象一下曲面就在xy平面上，最小特征值对应的向量与z轴垂直，那么最小的角度足够小，因此只要估计f(x,y) = z即可
+        //2-1 足够大
         if((++sorted_angle_a.begin()) ->first - sorted_angle_a.begin()->first > eig_2minus1_distinctive_angle){//0.2
             //2-1 > threshold, distinctive angle, only one gp function is enough
             direction_list[sorted_angle_a.begin()->second] = true;
         }
         else {
             //<0.2
+            //想象一下，如果曲面和xy平面有一定的夹角，那么如果最小特征向量最大的夹角比第二大的夹角足够大，那么需要估计两个方程 f(x,y) = z(z方向是最小夹角) f(x,z) = y(y方向是次大夹角) 
+            //3-2 足够大
             if(sorted_angle_a.rbegin()->first - (++sorted_angle_a.begin())->first > eig_3minus2_obscure_angle){//0.2
                 //3-2 obscure angle(OA)
                 direction_list[   sorted_angle_a.begin() ->second] = true;
                 direction_list[(++sorted_angle_a.begin())->second] = true;
             }
             else{
+                //2-1 不够大  3-2 不够大
                 //2-1<0.2 && 3-2<0.2, use 3 gp function, or there are 3 layers inside this cell
                 for(auto & i : direction_list) i = true;//all is true
             }
         }
     }
+
     //carry out reconstruction
+    //作者在这里使用了一个非常重要的概念：the coordiante used as observation is named direction.
+    //如果z是observation那么要估计的函数是f(x,y) = z
+    //如果x是observation那么要估计的函数是f(y,z) = x
     for(int i = 0; i < 3; i++){
         if(direction_list[i]){
-            gaussianProcess(Direction(i));
+            gaussianProcess(Direction(i));//非常重要的函数！！！！！！！！
             g_data.gp_times(0, g_data.step) ++;
             updated_times[i] = 1;
         }
@@ -279,6 +296,7 @@ void Cell::reconstructSurfaces(bool glb_cell_not_surface){
         }
     }
 }
+
  void Cell::updateVertices(Cell & cell_new, enum Direction update_direction){
     //update the vertices of a local surface (with certain prediction direction) inside a cell
     ROS_DEBUG("updateVertices");

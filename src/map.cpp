@@ -208,6 +208,7 @@ void  Map::dividePointsIntoCellInitMap(PointMatrix & points_raw){
 }
 
 //将当前帧在世界坐标系下的点云分割成cell， 并更新地图中cells_now这个变量信息
+//conduct_gp  = true
 void  Map::dividePointsIntoCell(PointMatrix & points_raw, const Map & map_glb, bool conduct_gp){
     // map_glb and map_now use different data structure to store cells. map_glb use unordered map for fast query,
     // map_now use vector for parallelization, so there are two dividePointsIntoCell functions.
@@ -307,13 +308,13 @@ void  Map::dividePointsIntoCell(PointMatrix & points_raw, const Map & map_glb, b
             //从全局地图中搜索是否存在这个cell，如果存在就将全局地图地图中的cell是否为平面的信息取出
             auto cell_glb = map_glb.cells_glb.find(posi_tmp);
             if(cell_glb != map_glb.cells_glb.end()){
-                map_glb_not_surface = cell_glb->second.not_surface;//非常重要从传入的参数中获取信息！！！！！
+                map_glb_not_surface = cell_glb->second.not_surface;//非常重要从传入的参数中获取信息！！！！！not_surface初始值为true
             }
         }
         //cell中包含了：原始点云数据，grid唯一编码，grid box范围，是否要进行高斯回归，是否为表面
        std::pair<double, Cell> tmp_cell (posi_tmp, Cell(points_raw_cell, g_data.step,
                                                         posi_tmp, region_tmp,
-                                                        conduct_gp, map_glb_not_surface));
+                                                        conduct_gp, map_glb_not_surface));//非常容易被忽视的构造函数！里面有重要的函数调用！
         tmp_cell.second.time_stamp = g_data.step;
         cells_now[index_bucket_enough_point[i_bucket_not_empty]] = tmp_cell;//更新了全局变量！！！！！！！！！！！！！！！！！！！！
     }
@@ -378,6 +379,8 @@ OverlapCellsRelation Map::overlapCells(Map & map_glb){
     g_data.time_find_overlap(0, g_data.step) += t_overlap_region.toc();
     return overlap_ship;
 }
+
+//
 OverlapCellsRelation Map::overlapCellsCrossCell(Map& map_glb, int overlap_length){
     ROS_DEBUG("overlapCellsCrossCell");
     TicToc t_overlap_region;
@@ -385,8 +388,10 @@ OverlapCellsRelation Map::overlapCellsCrossCell(Map& map_glb, int overlap_length
     OverlapCellsRelation overlap_ship;
     //g_data.un_bounded_count = 0;
     //for(auto& i_cmap_now : cells_glb){
+
+    //遍历当前帧足够多点云的grid
     for(int i = 0; i < index_bucket_enough_point.size(); i++){
-        std::pair<double, Cell> & i_cell_now = cells_now[index_bucket_enough_point[i]];
+        std::pair<double, Cell> & i_cell_now = cells_now[index_bucket_enough_point[i]];//拿到这个grid对应的cell数据结构
         std::vector<Cell*> multi_overlap_cell_glb(6 * overlap_length + 1);
         std::vector<double> overlap_index(6 * overlap_length + 1);//just for test
         //don't consider revisit
@@ -441,7 +446,7 @@ OverlapCellsRelation Map::overlapCellsCrossCell(Map& map_glb, int overlap_length
             }
         }
         overlap_ship.multi_cells_glb.push_back(multi_overlap_cell_glb);
-    }
+    }//end  for(int i = 0; i < index_bucket_enough_point.size(); i++){
     g_data.time_find_overlap(0, g_data.step) += t_overlap_region.toc();
     return overlap_ship;
 }
@@ -1092,7 +1097,8 @@ Transf Map::computeTPointToMesh(Map & map_glb, Map & map_now){
     return transf_last_curr;
 }
 
-//通过和地图进行匹配优化得到当前位姿和地图匹配关系
+//通过和地图进行匹配优化得到当前帧更加精确的
+位姿和地图匹配关系
 //涉及到了5个核心函数： overlapCellsCrossCell、findMatchPointToMesh、findMatchPoints、computeTPointToMesh、computeT
 void  Map::registerToMap(Map & map_glb, Transf & Tguess, double max_time){
     ROS_DEBUG("registerToMap");
@@ -1182,8 +1188,8 @@ void  Map::registerToMap(Map & map_glb, Transf & Tguess, double max_time){
         std::cout << "Pose SLAM: " << "x: " << transf_total(0, 3) << "  y: " << transf_total(1, 3) << "  z " << transf_total(2, 3) << "\n";// std::endl;
     }
 }
-
 void  Map::updateMap(Map & map_now){
+
     //update map_glb with map_now, update all 3 directions
     ROS_DEBUG("updateMap");
 
