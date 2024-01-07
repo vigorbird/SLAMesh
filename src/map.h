@@ -40,7 +40,8 @@ public:
     mesh_msgs::MeshGeometryStamped mesh_msg;//for mesh visualization
 
     std::unordered_map<double, Cell> cells_glb;//store the gped point in map glb
-    std::vector<std::pair<double, Cell>> cells_now;//map now, why vector: easy for multi-thread
+    // index索引是grid序号，pair中的double对应grid的唯一编码，cell存储的是这个grid中的所有信息
+    std::vector<std::pair<double, Cell>> cells_now;//map now, why vector: easy for multi-thread，
     std::vector<int> index_bucket_enough_point;//only cells have enough raw points will be reconstructed
     std::vector<Cell*> newly_updated_cells;//for visualization
 

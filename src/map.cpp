@@ -4,9 +4,13 @@
 extern Parameter param;//in SLAMesh node
 extern Log g_data;//in SLAMesh node
 
-//get_laser_time = 激光时间戳
+
 //points_result = 根据原始激光点云 voxle filter和 range filter之后的点云
-bool getPointCloud(PointMatrix & points_result, pcl::PointCloud<pcl::PointXYZ> & pcl_got, double & get_laser_time,
+//pcl_got  =  根据原始激光点云 voxle filter 之后的点云
+//get_laser_time = 激光时间戳
+bool getPointCloud(PointMatrix & points_result,
+                    pcl::PointCloud<pcl::PointXYZ> & pcl_got, 
+                    double & get_laser_time,
                    double voxel_filter_size){
     // get the new point cloud, from pcd file or from ros message
     ROS_DEBUG("getPointCloud");
@@ -202,6 +206,8 @@ void  Map::dividePointsIntoCellInitMap(PointMatrix & points_raw){
     std::cout<<"t_gp:"<<t_gp.toc() << "ms"<< std::endl;
     g_data.time_gp(0, g_data.step) += t_gp.toc();
 }
+
+//将当前帧在世界坐标系下的点云分割成cell， 并更新地图中cells_now这个变量信息
 void  Map::dividePointsIntoCell(PointMatrix & points_raw, const Map & map_glb, bool conduct_gp){
     // map_glb and map_now use different data structure to store cells. map_glb use unordered map for fast query,
     // map_now use vector for parallelization, so there are two dividePointsIntoCell functions.
@@ -212,6 +218,7 @@ void  Map::dividePointsIntoCell(PointMatrix & points_raw, const Map & map_glb, b
     double grid = param.grid, min_num_to_gp = param.min_points_num_to_gp;
     //point division
     //find a bounding box of current raw points in world frame
+    //1.找到输入点云的最大最小xyz数值
     double max_x = points_raw.point.block(0, 0, 1, points_raw.num_point).maxCoeff();
     double max_y = points_raw.point.block(1, 0, 1, points_raw.num_point).maxCoeff();
     double max_z = points_raw.point.block(2, 0, 1, points_raw.num_point).maxCoeff();
@@ -221,18 +228,21 @@ void  Map::dividePointsIntoCell(PointMatrix & points_raw, const Map & map_glb, b
     double  bot_grid_x = grid * floor(min_x / grid),
             bot_grid_y = grid * floor(min_y / grid),
             bot_grid_z = grid * floor(min_z / grid);
+    //设定grid大小后，获取grid数量
     int num_grid_x = int(ceil(max_x / grid) - floor(min_x / grid)),
         num_grid_y = int(ceil(max_y / grid) - floor(min_y / grid)),
         num_grid_z = int(ceil(max_z / grid) - floor(min_z / grid));
-    int num_grid = num_grid_x * num_grid_y * num_grid_z;
+    int num_grid = num_grid_x * num_grid_y * num_grid_z;//grid总数量
+
     //allocate memory
     PointMatrix init_points_bucket;
     Cell init_cell;
     int num_bucket = pow(2 * (range_max / grid) + 2, 3) / 5;//vertical FOV<90 will be enough, you can decrease this
     // initial size of pointMatrix to reduce memory comsumption here
-    static std::vector<PointMatrix> ary_points_bucket(num_bucket, init_points_bucket);
-    static std::vector<int> index_bucket_not_empty;
+    static std::vector<PointMatrix> ary_points_bucket(num_bucket, init_points_bucket);//每个grid中存储的点云
+    static std::vector<int> index_bucket_not_empty;//好像这个变量没有被实际用到
 
+    //默认是不会进入这个条件的
     if(num_grid > ary_points_bucket.size()){
         //std::cout<<"num_grid "<<num_grid<<" "<<"ary_points_bucket.size " ;
         ROS_ERROR("Num grid > reserved in ary_points_bucket!");
@@ -253,10 +263,11 @@ void  Map::dividePointsIntoCell(PointMatrix & points_raw, const Map & map_glb, b
     for(int i_bucket = 0; i_bucket < index_bucket_enough_point.size(); i_bucket++){
         cells_now[index_bucket_enough_point[i_bucket]].second.clearPointsQuick();
     }//clear cells
-    index_bucket_enough_point.clear();
+    index_bucket_enough_point.clear();//grid 对应的索引
     index_bucket_not_empty.clear();
 
     //push points into bucket
+    //2.向grid中添加点云
     TicToc t_push_points;
     int i_grid;
     for(int i = 0; i < points_raw.num_point; i++){
@@ -266,6 +277,7 @@ void  Map::dividePointsIntoCell(PointMatrix & points_raw, const Map & map_glb, b
         ary_points_bucket[i_grid].addPoint(points_raw.point.col(i));
     }
     //remember which buckets have points
+    //记录那些拥有足够多点云数量的grid的索引。
     for(int i_bucket = 0; i_bucket < num_grid; i_bucket++){
         if(ary_points_bucket[i_bucket].num_point > min_num_to_gp){
             index_bucket_enough_point.push_back(i_bucket);
@@ -277,33 +289,38 @@ void  Map::dividePointsIntoCell(PointMatrix & points_raw, const Map & map_glb, b
 
     //reconstruction
     #pragma omp parallel for num_threads(param.num_thread)
+    //3.遍历gird中有足够多点的grid
     for(int i_bucket_not_empty = 0; i_bucket_not_empty < index_bucket_enough_point.size(); i_bucket_not_empty++){
         //for all buckets have enough raw points
         PointMatrix & points_raw_cell = ary_points_bucket[index_bucket_enough_point[i_bucket_not_empty]];
         //TicToc t_gp_pre_info;
+        //应该是拿到这个grid对应的xyz最小值
         double  iz = ( index_bucket_enough_point[i_bucket_not_empty] / (num_grid_x * num_grid_y)) * grid + bot_grid_z,
                 iy = ((index_bucket_enough_point[i_bucket_not_empty] % (num_grid_x * num_grid_y)) / num_grid_x) * grid + bot_grid_y,
                 ix = ((index_bucket_enough_point[i_bucket_not_empty] % (num_grid_x * num_grid_y)) % num_grid_x) * grid + bot_grid_x;
         double posi_tmp;
-        posi_tmp = getPosiWithTime(ix, iy, iz, grid, 0);
+        posi_tmp = getPosiWithTime(ix, iy, iz, grid, 0);//这个grid对应的唯一编码，类型是double
         Region region_tmp(ix, iy, iz, ix + grid, iy + grid,iz + grid);
 
         bool map_glb_not_surface;
         if(step != 0){//check wheather this cell can form a surfece in map_glb
+            //从全局地图中搜索是否存在这个cell，如果存在就将全局地图地图中的cell是否为平面的信息取出
             auto cell_glb = map_glb.cells_glb.find(posi_tmp);
             if(cell_glb != map_glb.cells_glb.end()){
-                map_glb_not_surface = cell_glb->second.not_surface;
+                map_glb_not_surface = cell_glb->second.not_surface;//非常重要从传入的参数中获取信息！！！！！
             }
         }
+        //cell中包含了：原始点云数据，grid唯一编码，grid box范围，是否要进行高斯回归，是否为表面
        std::pair<double, Cell> tmp_cell (posi_tmp, Cell(points_raw_cell, g_data.step,
                                                         posi_tmp, region_tmp,
                                                         conduct_gp, map_glb_not_surface));
         tmp_cell.second.time_stamp = g_data.step;
-        cells_now[index_bucket_enough_point[i_bucket_not_empty]] = tmp_cell;
+        cells_now[index_bucket_enough_point[i_bucket_not_empty]] = tmp_cell;//更新了全局变量！！！！！！！！！！！！！！！！！！！！
     }
     std::cout<<"t_gp:"<<t_gp.toc() << "ms"<< std::endl;
     g_data.time_gp(0, g_data.step) += t_gp.toc();
-}
+}//end function dividePointsIntoCell
+
 bool  Map::processNewScan(Transf & Tguess, int step_, const Map & map_glb){
     //CURRENT_SCAN procee new scan
     ROS_DEBUG("processNewScan");
@@ -317,14 +334,19 @@ bool  Map::processNewScan(Transf & Tguess, int step_, const Map & map_glb){
     name = "CURRENT_SCAN";
     TicToc t_get_pcl, t_turn_point, t_gp;
     //1.
+    //points_turned(滤波之后的点云) = 根据原始激光点云 voxle filter和 range filter之后的点云，这个变量为类内变量！！！！
+    //pcl_raw  =  根据原始激光点云 voxle filter 之后的点云
+    //timestamp = 激光时间戳
     if(!getPointCloud(points_turned, pcl_raw, timestamp, param.voxel_size)){
         return false;
     }
     g_data.time_get_pcl(0, g_data.step) = t_get_pcl.toc();
     std::cout<<"t_get_pcl:"<<t_get_pcl.toc() << "ms"<< std::endl;
-    //2.
+
+    //2.将滤波之后的点云根据匀速模型变换到世界坐标系下
     points_turned.transformPoints(Tguess);
-    //3.
+
+    //3.将当前帧在世界坐标系下的点云分割成cell， 并更新地图中cells_now这个变量信息
     dividePointsIntoCell(points_turned, map_glb, true);
     return true;
 }
@@ -1070,6 +1092,8 @@ Transf Map::computeTPointToMesh(Map & map_glb, Map & map_now){
     return transf_last_curr;
 }
 
+//通过和地图进行匹配优化得到当前位姿和地图匹配关系
+//涉及到了5个核心函数： overlapCellsCrossCell、findMatchPointToMesh、findMatchPoints、computeTPointToMesh、computeT
 void  Map::registerToMap(Map & map_glb, Transf & Tguess, double max_time){
     ROS_DEBUG("registerToMap");
     //scan to map registration, iterativel conduct overlapCellsCrossCell, findMatchPointToMesh, computeTPointToMesh and dividePointsIntoCell,
@@ -1078,7 +1102,10 @@ void  Map::registerToMap(Map & map_glb, Transf & Tguess, double max_time){
     int rg_max_times = param.register_times, num_test = param.num_test;
     double variance_regist = param.variance_register, converge_thr = param.converge_thr, gird = param.grid;
     int min_step = 10;
-    Transf transf_delta = Eigen::MatrixXd::Identity(4, 4), transf_total = Tguess, transf_this_step = Eigen::MatrixXd::Identity(4, 4);
+    
+    Transf transf_delta = Eigen::MatrixXd::Identity(4, 4);//每次优化之后得到的delta 位姿
+    Transf transf_total = Tguess;//初始位姿 = 匀速模型结果
+    Transf transf_this_step = Eigen::MatrixXd::Identity(4, 4);//好像这个变量并没有被用到
     //some report
     std::vector<int> ary_num_overlap_point;
     std::vector<double> ary_delta_transf_scale;
@@ -1086,6 +1113,8 @@ void  Map::registerToMap(Map & map_glb, Transf & Tguess, double max_time){
     int i_rg;
     double delta_transf_scale = 100;
 
+
+    //迭代多次寻找匹配和对应关系
     for(i_rg = 0; i_rg < rg_max_times && !precise; i_rg++){
         //TicToc t_rg_overlap_region;
         if(i_rg < rg_max_times - 1){
@@ -1102,6 +1131,7 @@ void  Map::registerToMap(Map & map_glb, Transf & Tguess, double max_time){
             OverlapCellsRelation overlap_ship = overlapCellsCrossCell(map_glb, 0);
             findMatchPointToMesh(overlap_ship, map_glb, variance_regist, param.residual_combination);
         }
+
         TicToc t_rg_computert;
         if(param.point2mesh){
             transf_delta = computeTPointToMesh(map_glb, *this);
@@ -1111,20 +1141,24 @@ void  Map::registerToMap(Map & map_glb, Transf & Tguess, double max_time){
         }
         g_data.time_compute_rt(0,g_data.step) += t_rg_computert.toc();
         transf_total = transf_delta * transf_total;
-        transf_this_step = transf_delta * transf_this_step;
+        transf_this_step = transf_delta * transf_this_step;//好像这个变量
+        //非常重要！更新了类成员变量points_turned，points_turned初始在世界坐标系系下的坐标由匀速模型计算得到，和地图匹配之后，得到更加精确的在世界坐标系下的坐标！
         points_turned.transformPoints(transf_delta);
 
         ary_num_overlap_point.push_back(ary_overlap_vertices[0].num_point +
                                         ary_overlap_vertices[1].num_point +
                                         ary_overlap_vertices[2].num_point);
         delta_transf_scale = 5 * (transf_delta.block(0, 0, 3, 3) - Eigen::MatrixXd::Identity(3, 3)).norm() +
-                transf_delta.block(0, 3, 3, 1).norm();
+                                transf_delta.block(0, 3, 3, 1).norm();
         ary_delta_transf_scale.push_back(delta_transf_scale);
         if((delta_transf_scale < converge_thr && i_rg > 0) || i_rg == rg_max_times - 1 || t_rg.toc() > 0.9 * max_time){
             precise = true;
         }
+        //非常重要会重新更新类内变量 cell_now
         dividePointsIntoCell(points_turned, map_glb, true);//reconstruct the point again before next iteration
     }
+
+    
     g_data.updatePose(transf_total);
     g_data.overlap_point_num(0, g_data.step) = ary_num_overlap_point.back();
     g_data.not_a_surface_cell_num(0, g_data.step) /= i_rg;

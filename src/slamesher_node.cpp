@@ -841,15 +841,19 @@ void SLAMesher::process(){
         //new scan
         Tguess = getOdom();//默认使用匀速模型计算初始的位姿态
 
+        //1.
         if(!map_now.processNewScan(Tguess, g_data.step, map_glb))//非常重要的函数！！！！！！！
         {
             std::cout<<"break"<<std::endl;
             break;
         }
         //register
+        //2.
         map_now.registerToMap(map_glb, Tguess, max_rg_time);//非常重要的函数！！！！！！！
         pubTf();//ros 发布消息
+        
         //map update
+        //3.
         TicToc t_update;
         map_glb.updateMap(map_now);//非常重要的函数！！！！！！！！
         g_data.time_update(0, g_data.step) = t_update.toc();
