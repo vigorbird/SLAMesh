@@ -106,6 +106,12 @@ private:
     std::chrono::time_point<std::chrono::system_clock> start, end;
 };
 float computeMSE(const PointMatrix & points_source, const PointMatrix & points_target);
+
+//num_test = config文件中设定的值 表示每个方向上需要采样几个点
+//fullcover = config文件中设定的值
+//test = 输出的矩阵
+//min  max(输入) = cell region对应的非prediction方向的最大和最小值
+//功能就是进行采样
 inline void evenSetLinSpaced(Eigen::Matrix<double, 1, Eigen::Dynamic> & test, int num_test, double min, double max, bool fullcover){
     //true false, cover all cell length
     //full_cover: test point location start from 0.5*step, like 0.5, 1.5, ..., 9.5

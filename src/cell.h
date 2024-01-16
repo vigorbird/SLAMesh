@@ -106,8 +106,8 @@ public:
     bool empety = true, not_surface = true;
     int time_stamp = 0;
     Region region;
-    double hash_position = 0;
-    Point center {0,0,0};
+    double hash_position = 0;//这个cell对应的唯一编码
+    Point center {0,0,0};//这个cell在空间的中心点坐标
     int revisited = 0;//if the sensor scan the same region after a certain time, revisited ++
     Point viewed_location {0, 0, 0};//sensor's location when this cell is observed
     int viewed_dir_count = 0;
