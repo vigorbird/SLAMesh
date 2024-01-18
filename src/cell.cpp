@@ -3,6 +3,8 @@
 extern Parameter param;//in SLAMesh node
 extern Log g_data;//in SLAMesh node
 
+//num_input = 输入
+//
 void VoxelFilter2D(int num_input, int & num_output, double grid,
                    Matrix1xd & f, Matrix1xd & train_x, Matrix1xd & train_y){
     //principled and fast 2D voxel filter to downsample the training points in GP process. Faster than kdtree.
@@ -30,7 +32,7 @@ void VoxelFilter2D(int num_input, int & num_output, double grid,
                 point_result(2, index) = f(0, i);
             }
         }
-        else if(even_closest_one_point){
+        else if(even_closest_one_point){//默认会进入这个条件！
             int index_x = int((train_x(0, i) - bot_x) / interval);//0 offset
             int index_y = int((train_y(0, i) - bot_y) / interval);
             int index_linear = 1 * index_x + num_test * index_y;
@@ -69,18 +71,18 @@ void VoxelFilter2D(int num_input, int & num_output, double grid,
 void Cell::gaussianProcess(enum Direction gp_direction){
     //standard gaussianProcess
     bool full_cover = param.full_cover; //whether the first and final test points lie on the border or not.
-    //full_cover: test point location start from 0.5*step, like 0.5, 1.5, ..., 9.5
+    //full_cover: test point location start from 0.5*step, lFike 0.5, 1.5, ..., 9.5
     //if full_cover == false: test point location start from 0*step, like 0, 1, ..., 10
     int num_test_side = param.num_test;//作者使用的num_test = 6
-    double grid = param.grid;
-    int num_test_square = param.num_test * param.num_test;
+    double grid = param.grid;//默认参数在1.2-1.6之间
+    int num_test_square = param.num_test * param.num_test;//作者使用的参数是 = 6×6 = 36
     double interval = grid / num_test_side;
     double variance_sensor = param.variance_sensor;
     double kernel_length = 1.2;// gp kernel
     //create test point
     Eigen::MatrixXd I_test =  Eigen::MatrixXd::Identity(num_test_square, num_test_square);
     Eigen::Matrix<double, 1, Eigen::Dynamic>  test_x, test_y;
-    Eigen::MatrixXd points_testm(num_test_square, 2);
+    Eigen::MatrixXd points_testm(num_test_square, 2);//test点的xy坐标
 
     //如果obseravation = z = 2 
     Direction prediction_dir = Direction((gp_direction + 0) % 3);//得到的结果为z
@@ -88,7 +90,9 @@ void Cell::gaussianProcess(enum Direction gp_direction){
     Direction location_dir_y = Direction((gp_direction + 2) % 3);//得到的结果为y
 
     //set test locations
-    if(gp_direction == X){
+    //1.对不同方向上进行采样！
+    if(gp_direction == X){// f(y,z) = x
+        //输出：输出参数 test_x，本质上是一个向量
         evenSetLinSpaced(test_x, num_test_side, region.y_min, region.y_max, full_cover);
         evenSetLinSpaced(test_y, num_test_side, region.z_min, region.z_max, full_cover);
     }
@@ -118,14 +122,19 @@ void Cell::gaussianProcess(enum Direction gp_direction){
         while(ros::ok());
     }
 
-    f_raw       = cell_raw_points.point.row(prediction_dir).leftCols(num_train_raw);
+    f_raw       = cell_raw_points.point.row(prediction_dir).leftCols(num_train_raw);//z值输出对应的行向量
+    //x输出对应的行向量
     train_x_raw = cell_raw_points.point.row(location_dir_x).leftCols(num_train_raw);//train_x---points_testm.col(0)---gp_direction + 1
+    //y输出对应的行向量
     train_y_raw = cell_raw_points.point.row(location_dir_y).leftCols(num_train_raw);
     train_x_min = train_x_raw.minCoeff();
     train_x_max = train_x_raw.maxCoeff();
     train_y_min = train_y_raw.minCoeff();
     train_y_max = train_y_raw.maxCoeff();
 
+    //输入：num_train_raw grid
+    //输出：num_train
+    //输入输出：f_raw train_x_raw train_y_raw
     VoxelFilter2D(num_train_raw, num_train, grid, f_raw, train_x_raw, train_y_raw);
     if(num_train > num_test_square ){
         ROS_ERROR("Too many trian pointin num in gp! num_train_after_voxel_filter");
@@ -141,7 +150,7 @@ void Cell::gaussianProcess(enum Direction gp_direction){
 
     Eigen::MatrixXd I_train = Eigen::MatrixXd::Identity(num_train, num_train);
 
-    //gp
+    //3.gp
     double mean = f.leftCols(num_train).mean();
     f.leftCols(num_train).array() -= mean;
 
@@ -181,6 +190,7 @@ void Cell::gaussianProcess(enum Direction gp_direction){
     variance_starm = (I_test - kky.block(0, 0, num_test_square, num_train) *
                                k_starm.block(0, 0, num_test_square, num_train).transpose()) .diagonal();
 
+    //4.gp过程结束，对平面的预测点进行赋值
     ary_cell_vertices[gp_direction] = Eigen::MatrixXd::Zero(3, num_test_square);
     ary_cell_vertices[gp_direction].point.row(prediction_dir).leftCols(num_test_square) = f_starm.transpose();
     ary_cell_vertices[gp_direction].point.row(location_dir_x).leftCols(num_test_square) = points_testm.col(0).transpose();
@@ -211,7 +221,7 @@ void Cell::gaussianProcess(enum Direction gp_direction){
     empety = false;
 }//end function gaussianProcess
 
-
+//
 void Cell::reconstructSurfaces(bool glb_cell_not_surface){
     //use gaussian process to reconstruct the local surfaces inside a cell, one cell can have 3 surfaces in 3 directions
     ROS_DEBUG("reconstructSurfaces");
@@ -287,6 +297,7 @@ void Cell::reconstructSurfaces(bool glb_cell_not_surface){
     //如果x是observation那么要估计的函数是f(y,z) = x
     for(int i = 0; i < 3; i++){
         if(direction_list[i]){
+            //主要更新了 ary_cell_vertices
             gaussianProcess(Direction(i));//非常重要的函数！！！！！！！！
             g_data.gp_times(0, g_data.step) ++;
             updated_times[i] = 1;

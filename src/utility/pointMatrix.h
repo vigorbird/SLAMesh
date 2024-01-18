@@ -28,7 +28,7 @@ public:
     Eigen::Vector3d min_vector{0,0,0};//or normal vector
     double min_value = -1;
     double variance_sum = -1;
-    std::map<double, Eigen::Matrix<double, 3, 1>> eig_sorted;//key = 特征值 value = 特征向量
+    std::map<double, Eigen::Matrix<double, 3, 1>> eig_sorted;//根据原始点云计算得到的：key = 特征值 value = 特征向量
 
     PointMatrix(){
         //initialize

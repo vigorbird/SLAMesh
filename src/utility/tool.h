@@ -109,7 +109,7 @@ float computeMSE(const PointMatrix & points_source, const PointMatrix & points_t
 
 //num_test = config文件中设定的值 表示每个方向上需要采样几个点
 //fullcover = config文件中设定的值
-//test = 输出的矩阵
+//test = 输出的矩阵，本质是一个向量
 //min  max(输入) = cell region对应的非prediction方向的最大和最小值
 //功能就是进行采样
 inline void evenSetLinSpaced(Eigen::Matrix<double, 1, Eigen::Dynamic> & test, int num_test, double min, double max, bool fullcover){
@@ -137,6 +137,7 @@ inline void evenSetLinSpaced(Eigen::Matrix<double, 1, Eigen::Dynamic> & test, in
         test(0,num_test-1) = max - 0.5 * interval;
     }
 }
+
 bool extendEigen1dVector(Eigen::Matrix<double, 1, Eigen::Dynamic> & ori_vector, int extend_length);
 #endif
 

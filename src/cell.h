@@ -113,7 +113,7 @@ public:
     int viewed_dir_count = 0;
     double average_viewed_distance = 0;//distance from sensor
     //data
-    PointMatrix cell_raw_points;
+    PointMatrix cell_raw_points;//在cell中的原始点云数据
     PointMatrix ary_cell_vertices[3];//direction X, Y, Z
     size_t updated_times[3];//if object is only observed in several frames, it may be dynamic object and will not shown in the final map
     //slamesh can also build tsdf map, it is optional
@@ -152,7 +152,7 @@ public:
         empety = false;
     };
 
-
+    //Cell构造函数
     Cell(PointMatrix & raw_points, int time_stamp_,
          double posi_, Region region_,
          bool reconstruct, bool not_surface_or_unknown_map_glb) :
@@ -164,6 +164,7 @@ public:
         }
         empety = false;
     };
+
     Cell(PointMatrix & raw_points, PointMatrix ary_cell_vertices_[], int time_stamp_,
          double posi_, Region region_) :
             cell_raw_points(raw_points), region(region_), hash_position(posi_), time_stamp(time_stamp_){
@@ -174,6 +175,7 @@ public:
         }
         empety = false;
     };
+
     Cell(){
     };
 };
