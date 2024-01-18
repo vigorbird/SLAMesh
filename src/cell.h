@@ -114,7 +114,7 @@ public:
     double average_viewed_distance = 0;//distance from sensor
     //data
     PointMatrix cell_raw_points;
-    PointMatrix ary_cell_vertices[3];//direction X, Y, Z
+    PointMatrix ary_cell_vertices[3];//direction X, Y, Z 对cell中重新采样的曲面点
     size_t updated_times[3];//if object is only observed in several frames, it may be dynamic object and will not shown in the final map
     //slamesh can also build tsdf map, it is optional
 
@@ -164,6 +164,7 @@ public:
         }
         empety = false;
     };
+    //Cell 2
     Cell(PointMatrix & raw_points, PointMatrix ary_cell_vertices_[], int time_stamp_,
          double posi_, Region region_) :
             cell_raw_points(raw_points), region(region_), hash_position(posi_), time_stamp(time_stamp_){

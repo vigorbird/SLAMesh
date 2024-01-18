@@ -3,11 +3,13 @@
 
 #include "cell.h"
 
+//
 class OverlapCellsRelation{
     //store the overlaping correspondences of map cells between current scan and global map
 public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
     //for each cell in current scan, it can be overlapped with global map:
+    //cells_now和cells_glb成对匹配
     std::vector<Cell*> cells_now;//array of ptr to map cell in map_now
     //the correspondent cell in the global map are store in one-to-one correspondence vector:
     std::vector<Cell*> cells_glb;//array of ptr to map cell in map_glb
@@ -15,7 +17,7 @@ public:
     std::vector<std::vector<Cell*>> multi_cells_glb;
     //inside the array, the map cells are store in order: 0,x-1,x+1,y-1,y+1,z-1,z+1 (when overlap legnth is 1)
     // cell in current scan can also have no correspondent cell in the global map, in this way, it is new map cells:
-    std::vector<Cell*> cells_now_new;
+    std::vector<Cell*> cells_now_new;//当前帧和地图无法匹配的cell，表示对环境新的观测
 };
 
 class Map{

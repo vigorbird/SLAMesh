@@ -879,7 +879,7 @@ void SLAMesher::process(){
         std::cout<<"Reach Max Step, exit"<<std::endl;
     }
     bool save_mesh_map = false;
-    map_glb.filterMeshGlb();//好像只是为了做数据格转换
+    map_glb.filterMeshGlb();//为了滤除现有的mesh，并将其保存成面片数据结构！！！！
     mesh_pub.publish(map_glb.mesh_msg);
     if(save_mesh_map){
         //at the end, publish global mesh map, may cost seconds

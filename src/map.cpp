@@ -353,18 +353,22 @@ bool  Map::processNewScan(Transf & Tguess, int step_, const Map & map_glb){
 }
 
 OverlapCellsRelation Map::overlapCells(Map & map_glb){
+////更新当前cells和地图的cells哪些有重叠的部分，和当前帧新的观测cells
     // find overlapped cells between map_glb and map_now
     ROS_DEBUG("overlapCells");
     TicToc t_overlap_region;
     OverlapCellsRelation overlap_ship;
     //g_data.un_bounded_count = 0;
 
+    //遍历当前帧足够多的cell
     for(int i = 0; i < index_bucket_enough_point.size(); i++){
-        std::pair<double, Cell> & i_cell_now = cells_now[index_bucket_enough_point[i]];
+        std::pair<double, Cell> & i_cell_now = cells_now[index_bucket_enough_point[i]];//拿到当前帧的某个cell
         //don't consider revisit
-        auto i_cell_glb = map_glb.cells_glb.find(i_cell_now.second.hash_position);
-        if(i_cell_glb != map_glb.cells_glb.end() && (param.num_margin_old_cell < 0 ||
-            std::abs(g_data.step - i_cell_glb->second.time_stamp) < param.num_margin_old_cell)){
+        auto i_cell_glb = map_glb.cells_glb.find(i_cell_now.second.hash_position);//判断全局地图中是否有这个cell
+        //如果地图中有这个cell并且设置了一个500的滑动窗口去更新地图的cell
+        if(i_cell_glb != map_glb.cells_glb.end() && 
+            (param.num_margin_old_cell < 0 || std::abs(g_data.step - i_cell_glb->second.time_stamp) < param.num_margin_old_cell))
+        {
             //if(i_cell_glb != map_glb.cells_glb.end() && (!param.margin_old_cell || g_data.step - i_cell_glb->second.time_stamp < 500)){
             Cell *ptr_cell_glb = &(i_cell_glb->second);
             Cell *ptr_cell_now = &(i_cell_now.second);
@@ -372,6 +376,7 @@ OverlapCellsRelation Map::overlapCells(Map & map_glb){
             overlap_ship.cells_now.push_back(ptr_cell_now);
         }
         else{
+            //如果地图中没有这个cell
             Cell* ptr_cell_new = &(i_cell_now.second);
             overlap_ship.cells_now_new.push_back(ptr_cell_new);
         }
@@ -589,6 +594,7 @@ void  Map::findMatchPoints(OverlapCellsRelation & overlap_ship, Map & map_glb, d
     //omp_destroy_lock(&mylock);
     g_data.time_find_overlap_points(0, g_data.step) += t_overlap_point.toc();
 }
+
 void  Map::findMatchPointToMesh(OverlapCellsRelation & overlap_ship, Map & map_glb, double variance_thr,
                                 bool residual_combination){
     //find Match Point for registration. 3Dir, cross cell, point to mesh
@@ -918,6 +924,7 @@ void  Map::filterVerticesByVariance(double variance_thr){
         }
     }
 }
+
 void  Map::filterVerticesByVarianceOverlap(double variance_thr, Map & map_now){
     //used to draw map only overlap region, in order to save time
     //filterVerticesByVariance3DirOverlap
@@ -1020,6 +1027,7 @@ Transf Map::computeT(Map & map_glb, Map & map_now){
 
     return transf_last_curr;
 }
+
 Transf Map::computeTPointToMesh(Map & map_glb, Map & map_now){
     // compute the transformation (T) between two scans, given residuals, use ceres, consider 3dir, use point to mesh
     // computeTPointToMesh
@@ -1097,8 +1105,7 @@ Transf Map::computeTPointToMesh(Map & map_glb, Map & map_now){
     return transf_last_curr;
 }
 
-//通过和地图进行匹配优化得到当前帧更加精确的
-位姿和地图匹配关系
+//通过和地图进行匹配优化得到当前帧更加精确的位姿和地图匹配关系
 //涉及到了5个核心函数： overlapCellsCrossCell、findMatchPointToMesh、findMatchPoints、computeTPointToMesh、computeT
 void  Map::registerToMap(Map & map_glb, Transf & Tguess, double max_time){
     ROS_DEBUG("registerToMap");
@@ -1125,7 +1132,7 @@ void  Map::registerToMap(Map & map_glb, Transf & Tguess, double max_time){
         //TicToc t_rg_overlap_region;
         if(i_rg < rg_max_times - 1){
             OverlapCellsRelation overlap_ship = overlapCellsCrossCell(map_glb, param.cross_cell_overlap_length);
-            if(param.point2mesh){
+            if(param.point2mesh){//默认是true
                 findMatchPointToMesh(overlap_ship, map_glb, variance_regist, param.residual_combination);
             }
             else{
@@ -1139,7 +1146,7 @@ void  Map::registerToMap(Map & map_glb, Transf & Tguess, double max_time){
         }
 
         TicToc t_rg_computert;
-        if(param.point2mesh){
+        if(param.point2mesh){//默认是true
             transf_delta = computeTPointToMesh(map_glb, *this);
         }
         else{
@@ -1194,23 +1201,27 @@ void  Map::updateMap(Map & map_now){
     ROS_DEBUG("updateMap");
 
     //find overlapped regions
+    //1.更新当前cells和地图的cells哪些有重叠的部分，和当前帧新的观测cells
     OverlapCellsRelation overlap_ship = map_now.overlapCells(*this);
     newly_updated_cells.clear();
     //update overlapped region
     //#pragma omp parallel for num_threads(param.num_thread)
+    //2.遍历和地图匹配上的当前帧的cell
     for(int i = 0; i < overlap_ship.cells_now.size(); i++){
         if((overlap_ship.cells_glb[i] != nullptr) &&
            (overlap_ship.cells_now[i] != nullptr)){
             Cell & cell_glb = *overlap_ship.cells_glb[i];
             Cell & cell_now = *overlap_ship.cells_now[i];
+            //如果地图这个cell不是平面，当前帧的cell是平面 ，则需要使用高斯回归过程重新对平面进行重建！！！！
             if(cell_glb.not_surface && !cell_now.not_surface){//&& (overlap_ship.cells_now[i])->not_surface
                 cell_glb.cell_raw_points += cell_now.cell_raw_points;
-                cell_glb.reconstructSurfaces(true);
+                cell_glb.reconstructSurfaces(true);//将当前帧的cell中的点云加入到世界的cell中，并重新构建世界系下的cell曲面
             }
             else{
                 for(int i_dir = 0; i_dir < 3; i_dir ++){
                     if(cell_glb.ary_cell_vertices[i_dir].num_point != 0 &&
                        cell_now.ary_cell_vertices[i_dir].num_point != 0 ) {
+                        //根据地图和当前帧cell里面的信息， 更新地图cell中的方差和坐标
                         cell_glb.updateVertices(cell_now, Direction(i_dir));
                     }
                     else if(cell_glb.ary_cell_vertices[i_dir].num_point == 0 &&
@@ -1220,19 +1231,23 @@ void  Map::updateMap(Map & map_now){
                 }
             }
             cell_glb.time_stamp = g_data.step;
+            //更新了观测这个cell到车体的距离，这个距离后续会用于filter
             cell_glb.updateViewedLocation(g_data.T_seq[g_data.step]);
 
-            newly_updated_cells.push_back(& cell_glb);
+            newly_updated_cells.push_back(& cell_glb);//这个变量好像没有被使用
         }
     }
 
     //add new cell
     //std::cout << "size of cells_now_new: " << overlap_ship.cells_now_new.size() << std::endl;
+    //如果有新的观测的cell，在现有的地图中并不存在
     if( !overlap_ship.cells_now_new.empty()){
+        //遍历所有新的cell
         for(auto & cell_now_new : overlap_ship.cells_now_new){
             Point current_pose, current_viewed_dir;
             current_pose = trans3Dpoint(0, 0, 0, g_data.T_seq[g_data.step]);
             current_viewed_dir = (current_pose - cell_now_new->center) / (current_pose - cell_now_new->center).norm();
+            //对这个cell进行唯一编码
             double tmp_posi = getPosiWithTime(cell_now_new->region.x_min,
                                               cell_now_new->region.y_min,
                                               cell_now_new->region.z_min, param.grid, cell_now_new->revisited);
@@ -1243,15 +1258,21 @@ void  Map::updateMap(Map & map_now){
             //                           (*cells_now_new).direction, (*cells_now_new).region, g_data.step, current_viewed_dir)); //TO DO: test correct margin old
             //cells_now_new->time_stamp = g_data.step;
             //cells_glb.emplace(tmp_posi, *cells_now_new);
-            Cell tmp_cell ((*cell_now_new).cell_raw_points, (*cell_now_new).ary_cell_vertices, g_data.step,
-                           tmp_posi, (*cell_now_new).region);
+            //搜索 Cell 2
+            //这个函数只是会更新cell中的平面采样点
+            Cell tmp_cell ((*cell_now_new).cell_raw_points, 
+                            (*cell_now_new).ary_cell_vertices, 
+                            g_data.step,
+                           tmp_posi, 
+                           (*cell_now_new).region);
             tmp_cell.updateViewedLocation(g_data.T_seq[g_data.step]);
 
             //cells_glb.emplace(tmp_posi, tmp_cell);
             pair<std::unordered_map<double, Cell>::iterator, bool> inserted_cell = cells_glb.emplace(tmp_posi, tmp_cell);
-            newly_updated_cells.push_back(& (inserted_cell.first->second));
+            newly_updated_cells.push_back(& (inserted_cell.first->second));//这个变量好像没有被使用
         }
     }
+
     std::cout << " num_cells: now:" << map_now.cells_glb.size();
     std::cout << " new:" << overlap_ship.cells_now_new.size();
     std::cout << " glb:" << cells_glb.size() << "\n";
@@ -1322,12 +1343,14 @@ void  Map::filterMeshLocal(){
     std::cout<<"mesh_msg: point " << tmp_mesh.mesh_geometry.vertices.size() << " faces: " << tmp_mesh.mesh_geometry.faces.size() <<std::endl;
     mesh_msg = tmp_mesh;
 }
+
+//准备在保存mesh之前，会调用这个函数！！！！！
 void  Map::filterMeshGlb(){
     //mesh_msg global scan by direct connectin, visualized by mesh_tool, need to traverse all cell in map
     ROS_DEBUG("filterMeshGlb");
     double variance_point = -1;
     double variance_face_show = param.variance_map_show;
-    int n_row(param.num_test), n_col(param.num_test);
+    int n_row(param.num_test), n_col(param.num_test);//num_test = 默认值6
     double grid = param.grid;
     int min_show_updated_times = 1;
     double max_show_distance = 70;
@@ -1339,9 +1362,11 @@ void  Map::filterMeshGlb(){
     TicToc t_connect_push("t_connect_push");
     for (auto & i_cell : cells_glb){
         // in each cell, dir, build mesh_msg
+        //距离太大则filter
         if(i_cell.second.average_viewed_distance > max_show_distance ){
             continue;
         }
+        //遍历地图这个cell的所有方向
         for(int dir = 0; dir < 3; dir ++){
             if(i_cell.second.updated_times[dir] < min_show_updated_times){
                 continue;
@@ -1352,6 +1377,7 @@ void  Map::filterMeshGlb(){
             }
             //inside mesh_msg
             int start_vertex_i = tmp_mesh.mesh_geometry.vertices.size();
+            //向mesh中添加顶点
             for(int vertex_i = 0; vertex_i < vertices.num_point ; vertex_i ++){
                 geometry_msgs::Point tmp_point;
                 tmp_point.x =  vertices.point(0, vertex_i);
@@ -1359,10 +1385,12 @@ void  Map::filterMeshGlb(){
                 tmp_point.z =  vertices.point(2, vertex_i);
                 tmp_mesh.mesh_geometry.vertices.push_back(tmp_point);
             }
+            //向mesh中添加face
             for(int vertex_i = 0; vertex_i < vertices.num_point; vertex_i++){
                 int ix_cell = vertex_i % (n_row);
                 int iy_cell = vertex_i / (n_row);
                 mesh_msgs::MeshTriangleIndices tmp_face;
+                //超级重要的代码！！！！
                 if(ix_cell + 1 < n_row && iy_cell - 1 >= 0){
                     double variance_face_i = (vertices.variance(0, vertex_i) +
                                               vertices.variance(0, vertex_i + 1) +
@@ -1386,7 +1414,7 @@ void  Map::filterMeshGlb(){
                     }
                 }
             }
-        }
+        }//遍历三个方向结束
     }
     std::cout<<"mesh_msg: point " << tmp_mesh.mesh_geometry.vertices.size() << " faces: " << tmp_mesh.mesh_geometry.faces.size() <<std::endl;
     mesh_msg = tmp_mesh;

@@ -257,7 +257,7 @@ void Cell::reconstructSurfaces(bool glb_cell_not_surface){
     else{
         //can form surface(s)
         //使用最小特征值的那个角度来判断哪些变量会是observation！
-        not_surface = false;
+        not_surface = false;//整个代码就这里被赋值为了false
         //想象一下曲面就在xy平面上，最小特征值对应的向量与z轴垂直，那么最小的角度足够小，因此只要估计f(x,y) = z即可
         //2-1 足够大
         if((++sorted_angle_a.begin()) ->first - sorted_angle_a.begin()->first > eig_2minus1_distinctive_angle){//0.2
@@ -297,7 +297,8 @@ void Cell::reconstructSurfaces(bool glb_cell_not_surface){
     }
 }
 
- void Cell::updateVertices(Cell & cell_new, enum Direction update_direction){
+//根据地图和当前帧cell里面的信息， 更新地图cell中的方差和坐标
+void Cell::updateVertices(Cell & cell_new, enum Direction update_direction){
     //update the vertices of a local surface (with certain prediction direction) inside a cell
     ROS_DEBUG("updateVertices");
     //init
@@ -305,7 +306,7 @@ void Cell::reconstructSurfaces(bool glb_cell_not_surface){
     int num_test_square = param.num_test * param.num_test;
     double variance_map_update = param.variance_map_update;
     Eigen::Matrix<double, 1, Eigen::Dynamic> update, observe, variance_update ,variance_observe;
-     update = observe = variance_update = variance_observe = Eigen::MatrixXd::Zero(1, num_test_square);
+    update = observe = variance_update = variance_observe = Eigen::MatrixXd::Zero(1, num_test_square);
 
     PointMatrix & points_old = ary_cell_vertices[update_direction];
     PointMatrix & points_new = cell_new.ary_cell_vertices[update_direction];
@@ -316,13 +317,18 @@ void Cell::reconstructSurfaces(bool glb_cell_not_surface){
      variance_observe = points_new.variance.leftCols(num_test_square);
 
     //iteratively least square update
+    //便利cell中的所有重采样点
     for(int i = 0; i < num_test_square; i++){
+        //地图的方差 和 当前帧的方差都小于设定的方差阈值
         if((variance_update(0, i) <= variance_map_update) && (variance_observe(0, i) <= variance_map_update)){
+            // (x_map*K_map + x_cur*K_cur)/(K_map + K_cur)
             update(0, i)   = (update(0, i) * variance_observe(0, i) + observe(0, i) * variance_update(0, i))
                              / (variance_update(0, i) + variance_observe(0, i));
             variance_update(0, i) = variance_update(0, i) * variance_observe(0, i) / (variance_update(0, i) + variance_observe(0, i));
         }
+        //如果地图的方差太大 或者 新的方差太大
         else if((variance_update(0, i) > variance_map_update) || (variance_observe(0, i) > variance_map_update)){
+            //谁的方差小用谁的
             update(0, i)   = (variance_update(0, i) <= variance_observe(0, i)) ? (update  (0, i)) : (observe (0, i));
             variance_update(0, i) = (variance_update(0, i) <= variance_observe(0, i)) ? (variance_update(0, i)) : (variance_observe(0, i));
         }
@@ -334,15 +340,19 @@ void Cell::reconstructSurfaces(bool glb_cell_not_surface){
 
      points_old.variance_sum = points_old.variance.leftCols(num_test_square).sum();
 }
+
+
 void Cell::updateViewedLocation(const Transf & transf_viewed) {
     //iteratively update the view direction from sensor to certain surface inside a cell
     ROS_DEBUG("updateViewedLocation");
-    Point viewed_pose = trans3Dpoint(0, 0, 0, transf_viewed);
+    Point viewed_pose = trans3Dpoint(0, 0, 0, transf_viewed);//相当于T*p
     Point viewed_arrow = viewed_pose - center;
     Point current_viewed_dir = viewed_arrow / viewed_arrow.norm();
 
+    //这个变量好像实际没有被使用
     viewed_location = (viewed_location * viewed_dir_count + current_viewed_dir) /
                       (viewed_location * viewed_dir_count + current_viewed_dir).norm();
+    //这个变量用于fitler
     average_viewed_distance = (average_viewed_distance * viewed_dir_count + viewed_arrow.norm()) / (1 + viewed_dir_count);
     viewed_dir_count ++;
 }
