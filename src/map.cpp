@@ -312,9 +312,10 @@ void  Map::dividePointsIntoCell(PointMatrix & points_raw, const Map & map_glb, b
             }
         }
         //cell中包含了：原始点云数据，grid唯一编码，grid box范围，是否要进行高斯回归，是否为表面
+        //非常容易被忽视的构造函数！里面有重要的函数调用！
        std::pair<double, Cell> tmp_cell (posi_tmp, Cell(points_raw_cell, g_data.step,
                                                         posi_tmp, region_tmp,
-                                                        conduct_gp, map_glb_not_surface));//非常容易被忽视的构造函数！里面有重要的函数调用！
+                                                        conduct_gp, map_glb_not_surface));
         tmp_cell.second.time_stamp = g_data.step;
         cells_now[index_bucket_enough_point[i_bucket_not_empty]] = tmp_cell;//更新了全局变量！！！！！！！！！！！！！！！！！！！！
     }
@@ -352,6 +353,7 @@ bool  Map::processNewScan(Transf & Tguess, int step_, const Map & map_glb){
     return true;
 }
 
+//
 OverlapCellsRelation Map::overlapCells(Map & map_glb){
 ////更新当前cells和地图的cells哪些有重叠的部分，和当前帧新的观测cells
     // find overlapped cells between map_glb and map_now
@@ -1146,7 +1148,7 @@ void  Map::registerToMap(Map & map_glb, Transf & Tguess, double max_time){
         }
 
         TicToc t_rg_computert;
-        if(param.point2mesh){//默认是true
+        if(param.point2mesh){//默认会进入这个条件
             transf_delta = computeTPointToMesh(map_glb, *this);
         }
         else{
