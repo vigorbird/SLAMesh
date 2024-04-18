@@ -233,8 +233,7 @@ public:
         if(num_point != 0){
             centroid = point.leftCols(num_point).rowwise().sum() / num_point;
 
-            Eigen::Matrix<double, 3, Eigen::Dynamic> remove_centroid =
-                    point.leftCols(num_point) - centroid.replicate(1, num_point);
+            Eigen::Matrix<double, 3, Eigen::Dynamic> remove_centroid = point.leftCols(num_point) - centroid.replicate(1, num_point);
             Eigen::Matrix3d covarianceMat = remove_centroid * remove_centroid.adjoint() / num_point;
             Eigen::EigenSolver<Eigen::Matrix3d> eig(covarianceMat);
             eigenvalMat = eig.pseudoEigenvalueMatrix();

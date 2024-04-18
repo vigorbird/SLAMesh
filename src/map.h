@@ -13,7 +13,9 @@ public:
     std::vector<Cell*> cells_now;//array of ptr to map cell in map_now
     //the correspondent cell in the global map are store in one-to-one correspondence vector:
     std::vector<Cell*> cells_glb;//array of ptr to map cell in map_glb
+
     //when cross-cell overlapping is allowed, we look for neighbour cells too, so 1-multi correspondence exist,
+    //里面存储的是地图cell
     std::vector<std::vector<Cell*>> multi_cells_glb;
     //inside the array, the map cells are store in order: 0,x-1,x+1,y-1,y+1,z-1,z+1 (when overlap legnth is 1)
     // cell in current scan can also have no correspondent cell in the global map, in this way, it is new map cells:

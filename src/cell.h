@@ -114,7 +114,7 @@ public:
     double average_viewed_distance = 0;//distance from sensor
     //data
     PointMatrix cell_raw_points;
-    PointMatrix ary_cell_vertices[3];//direction X, Y, Z
+    PointMatrix ary_cell_vertices[3];//direction X, Y, Z 根据不同方向的平面，计算得到的重采样点
     size_t updated_times[3];//if object is only observed in several frames, it may be dynamic object and will not shown in the final map
     //slamesh can also build tsdf map, it is optional
 
@@ -157,13 +157,17 @@ public:
          double posi_, Region region_,
          bool reconstruct, bool not_surface_or_unknown_map_glb) :
             cell_raw_points(raw_points), region(region_), hash_position(posi_), time_stamp(time_stamp_){
+
         //used in dividePointsIntoCell, and dividePointsIntoCellInitMap.
+        //根据输入的grid范围，计算这个grid的中心点坐标
         center << (region.x_min+region.x_max)/2.0, (region.y_min+region.y_max)/2.0,(region.z_min+region.z_max)/2.0;
         if(reconstruct){
+            //非常重要的函数！！！！！
             reconstructSurfaces(not_surface_or_unknown_map_glb);// if no map_glb info, this value is true
         }
         empety = false;
     };
+
     //Cell 2
     Cell(PointMatrix & raw_points, PointMatrix ary_cell_vertices_[], int time_stamp_,
          double posi_, Region region_) :

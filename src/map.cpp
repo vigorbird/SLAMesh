@@ -207,7 +207,7 @@ void  Map::dividePointsIntoCellInitMap(PointMatrix & points_raw){
     g_data.time_gp(0, g_data.step) += t_gp.toc();
 }
 
-//将当前帧在世界坐标系下的点云分割成cell， 并更新地图中cells_now这个变量信息
+//根据将当前帧在世界坐标系下的点云,新生成当前帧cell， 
 //conduct_gp  = true
 void  Map::dividePointsIntoCell(PointMatrix & points_raw, const Map & map_glb, bool conduct_gp){
     // map_glb and map_now use different data structure to store cells. map_glb use unordered map for fast query,
@@ -275,7 +275,7 @@ void  Map::dividePointsIntoCell(PointMatrix & points_raw, const Map & map_glb, b
         i_grid = 1 *                       floor((points_raw.point(0, i) - bot_grid_x) / grid) +
                  num_grid_x *              floor((points_raw.point(1, i) - bot_grid_y) / grid) +
                  num_grid_x * num_grid_y * floor((points_raw.point(2, i) - bot_grid_z) / grid);
-        ary_points_bucket[i_grid].addPoint(points_raw.point.col(i));
+        ary_points_bucket[i_grid].addPoint(points_raw.point.col(i));//very importnat function!!!!!!!!!!
     }
     //remember which buckets have points
     //记录那些拥有足够多点云数量的grid的索引。
@@ -313,10 +313,14 @@ void  Map::dividePointsIntoCell(PointMatrix & points_raw, const Map & map_glb, b
         }
         //cell中包含了：原始点云数据，grid唯一编码，grid box范围，是否要进行高斯回归，是否为表面
         //非常容易被忽视的构造函数！里面有重要的函数调用！
-       std::pair<double, Cell> tmp_cell (posi_tmp, Cell(points_raw_cell, g_data.step,
-                                                        posi_tmp, region_tmp,
-                                                        conduct_gp, map_glb_not_surface));
+       std::pair<double, Cell> tmp_cell (posi_tmp, Cell(points_raw_cell, //grid中点云
+                                                        g_data.step,
+                                                        posi_tmp, //gird唯一编码
+                                                        region_tmp,//grid box范围
+                                                        conduct_gp, //true
+                                                        map_glb_not_surface));
         tmp_cell.second.time_stamp = g_data.step;
+        //此处的cells_now定义： std::vector<std::pair<double, Cell>> cells_now;
         cells_now[index_bucket_enough_point[i_bucket_not_empty]] = tmp_cell;//更新了全局变量！！！！！！！！！！！！！！！！！！！！
     }
     std::cout<<"t_gp:"<<t_gp.toc() << "ms"<< std::endl;
@@ -396,7 +400,7 @@ OverlapCellsRelation Map::overlapCellsCrossCell(Map& map_glb, int overlap_length
     //g_data.un_bounded_count = 0;
     //for(auto& i_cmap_now : cells_glb){
 
-    //遍历当前帧足够多点云的grid
+    //遍历当前帧 包含足够多点云的grid
     for(int i = 0; i < index_bucket_enough_point.size(); i++){
         std::pair<double, Cell> & i_cell_now = cells_now[index_bucket_enough_point[i]];//拿到这个grid对应的cell数据结构
         std::vector<Cell*> multi_overlap_cell_glb(6 * overlap_length + 1);
@@ -417,6 +421,7 @@ OverlapCellsRelation Map::overlapCellsCrossCell(Map& map_glb, int overlap_length
             overlap_index[0] = i_cell_now.second.hash_position;
         }
         else{
+            //现有地图中没有这个grid
             Cell* ptr_cell_now = &(i_cell_now.second);
             overlap_ship.cells_now_new.push_back(ptr_cell_now);
             multi_overlap_cell_glb[0]=(nullptr);
@@ -424,6 +429,7 @@ OverlapCellsRelation Map::overlapCellsCrossCell(Map& map_glb, int overlap_length
             overlap_index[0] = i_cell_now.second.hash_position;
         }
         //cross overlap
+        //在当前帧的前后左右cell中寻找是否与地图的cell重合
         for(int iz = -1 * overlap_length; iz <= overlap_length; iz++){
             for(int iy = -1 * overlap_length; iy <= overlap_length; iy++){
                 for(int ix = -1 * overlap_length; ix <= overlap_length; ix++){
@@ -597,8 +603,9 @@ void  Map::findMatchPoints(OverlapCellsRelation & overlap_ship, Map & map_glb, d
     g_data.time_find_overlap_points(0, g_data.step) += t_overlap_point.toc();
 }
 
-void  Map::findMatchPointToMesh(OverlapCellsRelation & overlap_ship, Map & map_glb, double variance_thr,
-                                bool residual_combination){
+//overlap_ship = 当前帧的cell与地图中cell的匹配关系
+//map_glb = 全局地图
+void  Map::findMatchPointToMesh(OverlapCellsRelation & overlap_ship, Map & map_glb, double variance_thr, bool residual_combination){
     //find Match Point for registration. 3Dir, cross cell, point to mesh
     ROS_DEBUG("findMatchPointToMesh");
     int num_test_square = param.num_test * param.num_test;
@@ -618,16 +625,18 @@ void  Map::findMatchPointToMesh(OverlapCellsRelation & overlap_ship, Map & map_g
     //#pragma omp parallel for num_threads(param.num_thread)
     for(size_t i_cell_now = 0; i_cell_now < overlap_ship.cells_now.size(); i_cell_now++) {
         //for each cell in map_now overlaped
+        //因为平面有三个方向函数，f(x,y) = z, f(y,z) = x, f(z,x) = y; 因此需要遍历三个不同的方向
         for(int dir = 0; dir < 3; dir++){
             Eigen::Matrix<double, 5, Eigen::Dynamic> closest_point_glb = Eigen::MatrixXd::Zero(5, num_test_square);//storer
             closest_point_glb = Eigen::MatrixXd::Zero(5, num_test_square);
             closest_point_glb.row(4).fill(-1);//distance, -1: not found
-            PointMatrix & point_now = (*overlap_ship.cells_now[i_cell_now]).ary_cell_vertices[dir];
+            PointMatrix & point_now = (*overlap_ship.cells_now[i_cell_now]).ary_cell_vertices[dir];//当前帧cell中不同方向的重采样点
             if(point_now.num_point == 0){
                 continue;
             }
             //find closest
             //old
+            //遍历地图上当前帧cell一定范围内的地图上的其他cell
             for(int i = -1 * overlap_lace; i <= overlap_lace; i++) {
                 int index;
                 if (i == 0) {
@@ -640,7 +649,7 @@ void  Map::findMatchPointToMesh(OverlapCellsRelation & overlap_ship, Map & map_g
                 if (overlap_ship.multi_cells_glb[i_cell_now][index] == nullptr) {
                     continue;
                 }
-                PointMatrix & points_glb = (*overlap_ship.multi_cells_glb[i_cell_now][index]).ary_cell_vertices[dir];
+                PointMatrix & points_glb = (*overlap_ship.multi_cells_glb[i_cell_now][index]).ary_cell_vertices[dir];//当前帧cell一定范围内的地图cell的重采样点
                 if (points_glb.num_point == 0) {
                     continue;
                 }
@@ -787,96 +796,13 @@ void  Map::findMatchPointToMesh(OverlapCellsRelation & overlap_ship, Map & map_g
                     if(closest_point_glb(4, i_result) > 0 && point_now.variance(i_result) < variance_thr
                        && closest_point_glb(3, i_result) < variance_thr && normal_cell.point.col(i_result).norm() > 0.1) {
                         //omp_set_lock(&mylock);
-                        map_glb.ary_overlap_vertices[dir].addPointWithVariance(
-                                closest_point_glb.col(i_result).topRows(4));
+                        map_glb.ary_overlap_vertices[dir].addPointWithVariance(closest_point_glb.col(i_result).topRows(4));
                         ary_overlap_vertices[dir].addPointWithVariance(point_now.getPointWithVariance(i_result));
                         map_glb.ary_normal[dir].addPoint(normal_cell.point.col(i_result));
                         //omp_unset_lock(&mylock);
                     }
                 }
             }
-            //compute norm what different?
-            /* PointMatrix normal_cell;
-             Eigen::Matrix<int, 2, 4> offset;
-             offset << 1, 0,-1, 0,
-                       0,-1, 0, 1;
-             for(int i_point=0; i_point < closest_point_glb.cols(); i_point++) {
-                 Point curr_point = point_now.point.col(i_point);
-                 if(closest_point_glb(4, i_point) < 0) {
-                     continue;
-                 }
-                 int ix_cell = i_point % (n_row);
-                 int iy_cell = i_point / (n_row);
-                 int num_valid_neighboor = 0;
-                 double delta_face_i = 0;
-                 Eigen::Vector3d normal_i;
-                 normal_i.setZero();
-                 for(int i_offset=0; i_offset<4; i_offset++) {
-                     if ((ix_cell + offset(0, i_offset) < n_row &&
-                          ix_cell + offset(0, i_offset) >= 0 &&
-                          iy_cell + offset(1, i_offset) < n_row &&
-                          iy_cell + offset(1, i_offset) >= 0)
-                          &&
-                         (ix_cell + offset(0, (i_offset + 1) % 4) < n_row &&
-                          ix_cell + offset(0, (i_offset + 1) % 4) >= 0 &&
-                          iy_cell + offset(1, (i_offset + 1) % 4) < n_row &&
-                          iy_cell + offset(1, (i_offset + 1) % 4) >= 0)){
-
-                         int idx_1 = i_point + offset(0, i_offset) +           n_row * offset(1, i_offset);
-                         int idx_2 = i_point + offset(0, (i_offset + 1) % 4) + n_row * offset(1, (i_offset + 1) % 4);
-                         if(closest_point_glb(4, idx_1) > 0 && closest_point_glb(4, idx_2) > 0){
-                             delta_face_i += closest_point_glb(3, idx_1);
-                             delta_face_i += closest_point_glb(3, idx_2);
-                             Eigen::Vector3d normal_i_cross = (curr_point - closest_point_glb.col(idx_1).topRows(3)).cross(
-                                                               curr_point - closest_point_glb.col(idx_2).topRows(3));
-                             normal_i_cross.normalize();
-                             normal_i += normal_i_cross;
-                             num_valid_neighboor++;
-                         }
-                     }
-                 }
-                 if(num_valid_neighboor == 0){
-                     normal_i = point_now.point.col(i_point) - closest_point_glb.col(i_point).topRows(3);
-                     normal_i.normalize();
-                 }
-                 else {
-                     //std::cout<<"num_valid_neighboor "<<num_valid_neighboor<<std::endl;
-                     delta_face_i = delta_face_i/num_valid_neighboor/2.0;
-                     //closest_point_glb(3, i_point) = delta_face_i;
-                     normal_i.normalize();
-                 }
-                 normal_cell.addPoint(normal_i);
-                 if(!residual_combination){
-                     map_glb.ary_overlap_vertices[dir] .addPointWithDelta(closest_point_glb.col(i_point).topRows(4));
-                     ary_overlap_vertices[dir].addPointWithDelta(point_now.getPointWithDelta(i_point));
-                     map_glb.ary_normal[dir].addPoint(normal_i);
-                 }
-             }
-             if(residual_combination){
-                 Eigen::Matrix<double, 4, 1> avged_point_glb, avged_point_now;
-                 Point normal_avg;
-                 avged_point_glb.fill(0);
-                 avged_point_now.fill(0);
-                 normal_avg.setZero();
-                 int num_valid_points = 0;
-                 double all_delta_glb(0), all_delta_now(0);
-                 for(int i_result=0; i_result < closest_point_glb.cols(); i_result++){
-                     if(closest_point_glb(4, i_result) > 0) {
-                         num_valid_points++;
-                         avged_point_glb += closest_point_glb.col(i_result).topRows(4);
-                         avged_point_now += point_now.getPointWithVariance(i_result);
-                         normal_avg += normal_cell.point.col(i_result);
-                     }
-                 }
-                 if(num_valid_points>0){
-                     avged_point_glb /= num_valid_points;
-                     avged_point_now /= num_valid_points;
-                     map_glb.ary_overlap_vertices[dir] .addPointWithDelta(avged_point_glb);
-                     ary_overlap_vertices[dir].addPointWithVariance(avged_point_now);
-                     normal_avg.normalize();
-                     map_glb.ary_normal[dir] .addPoint(normal_avg);
-                 }
-             }*/
         }
     }
     //omp_destroy_lock(&mylock);
@@ -1133,9 +1059,11 @@ void  Map::registerToMap(Map & map_glb, Transf & Tguess, double max_time){
     for(i_rg = 0; i_rg < rg_max_times && !precise; i_rg++){
         //TicToc t_rg_overlap_region;
         if(i_rg < rg_max_times - 1){
+            //当前帧的cell与地图中cell的对应关系
             OverlapCellsRelation overlap_ship = overlapCellsCrossCell(map_glb, param.cross_cell_overlap_length);
             if(param.point2mesh){//默认是true
-                findMatchPointToMesh(overlap_ship, map_glb, variance_regist, param.residual_combination);
+                //这个函数稍微有点复杂没太看明白， 感觉就是找到全局地图点和当前帧cell中重采样点的对应关系
+                findMatchPointToMesh(overlap_ship, map_glb, variance_regist, param.residual_combination);//residual_combination = true
             }
             else{
                 findMatchPoints(overlap_ship, map_glb, variance_regist, param.residual_combination);
@@ -1149,6 +1077,8 @@ void  Map::registerToMap(Map & map_glb, Transf & Tguess, double max_time){
 
         TicToc t_rg_computert;
         if(param.point2mesh){//默认会进入这个条件
+            //使用ceres进行优化，根据上面寻找到的当前帧点到地图面的关系构建点到面的残差，不用细看 没什么特别的。
+            //唯一的不同是作者在不同的方向上都进行了计算，感觉有点笨啊这个方法，不如每个grid都建立一个pca坐标系
             transf_delta = computeTPointToMesh(map_glb, *this);
         }
         else{
@@ -1157,7 +1087,8 @@ void  Map::registerToMap(Map & map_glb, Transf & Tguess, double max_time){
         g_data.time_compute_rt(0,g_data.step) += t_rg_computert.toc();
         transf_total = transf_delta * transf_total;
         transf_this_step = transf_delta * transf_this_step;//好像这个变量
-        //非常重要！更新了类成员变量points_turned，points_turned初始在世界坐标系系下的坐标由匀速模型计算得到，和地图匹配之后，得到更加精确的在世界坐标系下的坐标！
+        //非常重要！更新了类成员变量points_turned，
+        //当前帧points_turned初始在世界坐标系系下的坐标由匀速模型计算得到，和地图匹配之后，得到更加精确的在世界坐标系下的坐标！
         points_turned.transformPoints(transf_delta);
 
         ary_num_overlap_point.push_back(ary_overlap_vertices[0].num_point +
@@ -1170,6 +1101,7 @@ void  Map::registerToMap(Map & map_glb, Transf & Tguess, double max_time){
             precise = true;
         }
         //非常重要会重新更新类内变量 cell_now
+        //根据将当前帧在世界坐标系下的点云,新生成当前帧cell， 
         dividePointsIntoCell(points_turned, map_glb, true);//reconstruct the point again before next iteration
     }
 
@@ -1270,6 +1202,7 @@ void  Map::updateMap(Map & map_now){
             tmp_cell.updateViewedLocation(g_data.T_seq[g_data.step]);
 
             //cells_glb.emplace(tmp_posi, tmp_cell);
+            //向地图插入新看到的cell
             pair<std::unordered_map<double, Cell>::iterator, bool> inserted_cell = cells_glb.emplace(tmp_posi, tmp_cell);
             newly_updated_cells.push_back(& (inserted_cell.first->second));//这个变量好像没有被使用
         }

@@ -792,6 +792,7 @@ bool SLAMesher::visualize(Map & map_glb, Map & map_now, int option){
     std::cout << "t_visualize: " << t_visualize.toc() << "ms" << std::endl;
     return true;
 }
+
 void SLAMesher::pubTf(){
     //publish tf and odometry message from
     Transf transf_now = g_data.T_seq[g_data.step];

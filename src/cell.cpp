@@ -4,7 +4,7 @@ extern Parameter param;//in SLAMesh node
 extern Log g_data;//in SLAMesh node
 
 //num_input = 输入
-//
+//num_output = 输出
 void VoxelFilter2D(int num_input, int & num_output, double grid,
                    Matrix1xd & f, Matrix1xd & train_x, Matrix1xd & train_y){
     //principled and fast 2D voxel filter to downsample the training points in GP process. Faster than kdtree.
@@ -22,8 +22,7 @@ void VoxelFilter2D(int num_input, int & num_output, double grid,
     bool just_first_point = false;//true false
     bool even_closest_one_point = true;
     for(int i = 0; i < num_input; i++){
-        int index = 1 * int((train_x(0, i) - bot_x) / interval) +
-                  num_test * int((train_y(0,i)-bot_y) / interval);
+        int index = 1 * int((train_x(0, i) - bot_x) / interval) + num_test * int((train_y(0,i)-bot_y) / interval);
         if(just_first_point){
             if(point_result(3, index) < 1){
                 point_result(3, index) = 1;
@@ -105,6 +104,7 @@ void Cell::gaussianProcess(enum Direction gp_direction){
         evenSetLinSpaced(test_y, num_test_side, region.y_min, region.y_max, full_cover);
     }
 
+    //得到均匀采样点坐标
     for(int row=0; row < num_test_square; row++){
         points_testm(row, 0) = test_x(0, row / num_test_side);
         points_testm(row, 1) = test_y(0, row % num_test_side);
@@ -122,7 +122,8 @@ void Cell::gaussianProcess(enum Direction gp_direction){
         while(ros::ok());
     }
 
-    f_raw       = cell_raw_points.point.row(prediction_dir).leftCols(num_train_raw);//z值输出对应的行向量
+    //z值输出对应的行向量
+    f_raw       = cell_raw_points.point.row(prediction_dir).leftCols(num_train_raw);
     //x输出对应的行向量
     train_x_raw = cell_raw_points.point.row(location_dir_x).leftCols(num_train_raw);//train_x---points_testm.col(0)---gp_direction + 1
     //y输出对应的行向量
@@ -132,10 +133,16 @@ void Cell::gaussianProcess(enum Direction gp_direction){
     train_y_min = train_y_raw.minCoeff();
     train_y_max = train_y_raw.maxCoeff();
 
+    //2.进行降采样！
     //输入：num_train_raw grid
     //输出：num_train
     //输入输出：f_raw train_x_raw train_y_raw
-    VoxelFilter2D(num_train_raw, num_train, grid, f_raw, train_x_raw, train_y_raw);
+    VoxelFilter2D(num_train_raw, 
+                    num_train, 
+                    grid, 
+                    f_raw, 
+                    train_x_raw, 
+                    train_y_raw);
     if(num_train > num_test_square ){
         ROS_ERROR("Too many trian pointin num in gp! num_train_after_voxel_filter");
         while(ros::ok());
@@ -154,13 +161,13 @@ void Cell::gaussianProcess(enum Direction gp_direction){
     double mean = f.leftCols(num_train).mean();
     f.leftCols(num_train).array() -= mean;
 
-    Eigen::MatrixXd f_starm(num_test_square, 1),
-             variance_starm(num_test_square, 1);
-    Eigen::MatrixXd       k(num_test_square, num_test_square),
-                         ky(num_test_square, num_test_square),
-                     ky_inv(num_test_square, num_test_square),
-                    k_starm(num_test_square, num_test_square),
-                        kky(num_test_square, num_test_square);
+    Eigen::MatrixXd f_starm(num_test_square, 1);
+    Eigen::MatrixXd variance_starm(num_test_square, 1);
+    Eigen::MatrixXd k(num_test_square, num_test_square);
+    Eigen::MatrixXd ky(num_test_square, num_test_square),
+    Eigen::MatrixXd ky_inv(num_test_square, num_test_square);
+    Eigen::MatrixXd k_starm(num_test_square, num_test_square);
+    Eigen::MatrixXd kky(num_test_square, num_test_square);
 
     for(int row = 0; row < num_train; row++){
         for(int col = 0; col < num_train; col++){
@@ -306,7 +313,7 @@ void Cell::reconstructSurfaces(bool glb_cell_not_surface){
             updated_times[i] = 0;
         }
     }
-}
+}//end function reconstructSurfaces
 
 //根据地图和当前帧cell里面的信息， 更新地图cell中的方差和坐标
 void Cell::updateVertices(Cell & cell_new, enum Direction update_direction){
@@ -350,7 +357,7 @@ void Cell::updateVertices(Cell & cell_new, enum Direction update_direction){
      points_old.variance.leftCols(num_test_square) = variance_update;
 
      points_old.variance_sum = points_old.variance.leftCols(num_test_square).sum();
-}
+}//end function updateVertices
 
 
 void Cell::updateViewedLocation(const Transf & transf_viewed) {
